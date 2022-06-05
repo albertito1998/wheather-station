@@ -31,9 +31,9 @@ The project has been carried out in a self-taught way thanks to the material pro
 
 
 
- * [See The complete bachelor thesis:](-------) - Bachelor Thesis uploaded in format PDF.
+ * [See The complete master thesis:](-------) - Bachelor Thesis uploaded in format PDF.
  
- * [Electrical design:](https://github.com/albertito1998/) - Electrical connections.
+ * [Electrical design:](https://github.com/albertito1998/wheather-station/tree/master/Eagle) - Electrical connections.
 
 ## Programming
  * [C++](https://isocpp.org/) - Programming language.
