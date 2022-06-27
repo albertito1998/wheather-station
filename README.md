@@ -13,7 +13,7 @@
 [![Build Status](http://img.shields.io/travis/badges/badgerbadgerbadger.svg?style=flat-square)](https://travis-ci.org/badges/badgerbadgerbadger)  [![License](http://img.shields.io/:license-mit-blue.svg?style=flat-square)](http://badges.mit-license.org) 
 ## Description
 <p align="center">
- <img src="Assets/01.jpeg" width="200" height="200" >
+ <img src="Assets/01.jpeg" >
 </p>
 
 This report will include the entire process carried out for the design and construction of a prototype of a meteorological station where data on different environmental variables will be collected for subsequent analysis.
