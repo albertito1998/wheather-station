@@ -1,28 +1,27 @@
-#include <WiFi.h>
-#include "time.h"
-#include <Firebase_ESP_Client.h>
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <Adafruit_Sensor.h>
-#include <DHT.h>
+#include <WiFi.h> // WIFI
+#include "time.h" // FUNCIONES DE FECHA
+#include <Firebase_ESP_Client.h> // FIREBASE
+#include <Wire.h> // COMUNICACION SPI
+#include <Adafruit_GFX.h> // ADAFRUIT 
+#include <Adafruit_SSD1306.h> // PANTALLA LED
+#include <Adafruit_Sensor.h> // SENSORES ADAFRUIT
+#include <DHT.h> // SENSOR DE TEMPERATURA
 #include <DHT_U.h>
-#include <Adafruit_BMP085.h>
-#include <TinyGPS++.h>                                  // Tiny GPS Plus Library
-#include <SoftwareSerial.h>                             // Software Serial Library so we can use other Pins for communication with the GPS 
-#include <MechaQMC5883.h>
-#include <Adafruit_CCS811.h>
-#include <BH1750.h>
-#include <SPI.h>
-#include <LoRa.h>
-#include "FS.h"
+#include <BMP180.h> // SENSOR BAROMETRICO
+#include <TinyGPS++.h>      // GPS
+#include <SoftwareSerial.h>   // COMUNICACION SERIAL
+#include <MechaQMC5883.h>    // SENSOR BRUJULA
+#include <Adafruit_CCS811.h> // SENSOR DE GAS
+#include <BH1750.h> // SENSOR DE LUZ
+#include <SPI.h>  // COMUNICACION SPI
+#include <LoRa.h>  // LORAhmc
+#include "FS.h" // COMUNICACION SD
 #include "SD.h"
-#include "Adafruit_VL53L0X.h"
-#include "INA226.h"
-#include "Adafruit_VEML6070.h"
+#include "Adafruit_VL53L0X.h" // SENSOR DE DISTANCIA
+#include "INA226.h" // SENSOR DE CORRIENTE Y VOLTAJE
+#include "Adafruit_VEML6070.h" // SENSOR UV
 // Provide the token generation process info.
 #include <addons/TokenHelper.h>
-// Provide the RTDB payload printing info and other helper functions.
 #include <addons/RTDBHelper.h>
 
 
@@ -163,6 +162,7 @@ FirebaseConfig config;
 
 String USERS[3] = { "ElHYi2zcIFTSFk6N0nUsxWE4j352", "ViF2hDkYzkTO5SySGrFzyB3Mk4A2", "RDQjNDZRm9NVXSigf75GO7poBv92" };
 String WHEATHER[3] = { "WHEATHER_1", "WHEATHER_2", "WHEATHER_3" };
+const String forecastString[6] PROGMEM = {"thunderstorm", "rain", "cloudy", "partly cloudy", "sunny"}; //PROGMEM saves variable to flash & keeps dynamic memory free
 
 
 #define BUTTON_PIN_BITMASK 0x200000000 //
@@ -195,7 +195,7 @@ const int daylightOffset_sec = 7200; //3600
 #define codingRateDenominator 5
 #define signalBandwidth 500E3
 #define SCREEN_ADDRESS 0x3c //128x64
-#define TimeMeasure 4 // NUMBER OF MEASURINGS. ONE PER SECOND
+#define TimeMeasure 10 // NUMBER OF MEASURINGS. ONE PER SECOND
 #define TimeDisplay 3000 // number of miliseconds refresing display
 #define BATTERYPIN 12
 
@@ -212,8 +212,16 @@ DHT_Unified dht(DHTPIN, DHTTYPE);
 BH1750 lightMeter;
 
 
-// BMP180
-Adafruit_BMP085 bmp;
+/*
+  BMP180advanced(resolution)
+
+  resolution:
+  BMP180_ULTRALOWPOWER - pressure oversampled 1 time  & power consumption 3μA
+  BMP180_STANDARD      - pressure oversampled 2 times & power consumption 5μA
+  BMP180_HIGHRES       - pressure oversampled 4 times & power consumption 7μA
+  BMP180_ULTRAHIGHRES  - pressure oversampled 8 times & power consumption 12μA, library default
+*/
+BMP180 myBMP(BMP180_ULTRALOWPOWER);
 
 // INA226
 INA226 INA;
@@ -239,9 +247,9 @@ MechaQMC5883 qmc;
 
 String daysOfTheWeek[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 String monthsNames[12] = { "January", "february", "March", "April", "May",  "June", "July", "August", "September", "October", "November", "December" };
-
+String messageSD = "";
 // DEFINE GLOBAL VARIABLES
-float PRESSUREBMP180 = 0, TEMPERATUREBMP180 = 0, TEMPERATUREDHT22 = 0, HUMIDITYDHT22 = 0, CO2 = 0, TVOC = 0, LIGHT = 0, UVLEVEL = 0, WATT = 0, SOLARVOLTAGE = 0, SHUNT = 0, CURRENT = 0, LATITUDE = 43.270591946730036, direccion = 0, wind = 0, LONGITUDE =-2.9422544972776223, headingDegrees,  waterLevel = 0, voltage = 0, ALTITUDE = 0;
+float PRESSUREBMP180 = 0, Irradiance = 0, TEMPERATUREBMP180 = 0, TEMPERATUREDHT22 = 0, HUMIDITYDHT22 = 0, CO2 = 0, TVOC = 0, LIGHT = 0, UVLEVEL = 0, WATT = 0, SOLARVOLTAGE = 0, SHUNT = 0, CURRENT = 0, LATITUDE = 43.270591946730036, direccion = 0, wind = 0, LONGITUDE = -2.9422544972776223, headingDegrees,  waterLevel = 0, voltage = 0, ALTITUDE = 0;
 float PRESSUREBMP180M = 0, TEMPERATUREBMP180M = 0, TEMPERATUREDHT22M = 0, HUMIDITYDHT22M = 0, CO2M = 0, TVOCM = 0, LIGHTM = 0, direccionM = 0, windM = 0, batteryLevelM = 0, voltageM = 0, WATTM = 0, SOLARVOLTAGEM = 0, SHUNTM = 0, CURRENTM = 0, waterLevelM = 0, ALTITUDEM = 0;
 int16_t RELAY1 = 0, RELAY2 = 0, RELAY3 = 0, RELAY4 = 0, batteryLevel = 0;
 unsigned long epochTime;
@@ -290,8 +298,9 @@ struct Message {
 unsigned long dataMillis = 0;
 int count = 0;
 
-void printLocalTime(), Firestore(), onReceive(int packetSize), RTDB(), checkConfig(),  sendLoraMessage(), sensorsInitialize(), measureAll(), MeanCalculation(), displayAll(), connectivity(), initLora(), initSD(), appendFile(fs::FS &fs, const char * path), writeFile(fs::FS &fs, const char * path, const char * message), RTDB(), drawProgressbar(int x, int y, int width, int height, int progress), displaySensorDetails();
+void printLocalTime(), Firestore(), onReceive(int packetSize), RTDB(), checkConfig(),  sendLoraMessage(), sensorsInitialize(), measureAll(), MeanCalculation(), displayAll(), connectivity(), initLora(), initSD(), appendFile(fs::FS &fs, const char * path, const char * message), writeFile(fs::FS &fs, const char * path, const char * message), RTDB(), drawProgressbar(int x, int y, int width, int height, int progress);
 bool wifiConnect();
+uint8_t getForecastClimate();
 void setup()
 {
   Serial.begin(115200);
@@ -318,13 +327,13 @@ void setup()
     case ESP_SLEEP_WAKEUP_EXT1 : Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
     case ESP_SLEEP_WAKEUP_TOUCHPAD : Serial.println("Wakeup caused by touchpad"); break;
     case ESP_SLEEP_WAKEUP_ULP : Serial.println("Wakeup caused by ULP program"); break;
-    case ESP_SLEEP_WAKEUP_TIMER :
-      Serial.println("Wakeup caused by timer");
-      sensorsInitialize();
-      measureAll();
-      MeanCalculation();
-      displayAll();
-      connectivity();
+    case ESP_SLEEP_WAKEUP_TIMER : Serial.println("Wakeup caused by timer");
+      sensorsInitialize(); // INICIALIZACIÓN DE TODOS LOS SENSORES
+      measureAll(); // MEDICIONES CON BUCLE FOR
+      MeanCalculation(); // CALCULO DE MEDIA PONDERADA
+      displayAll(); // DISPLAY EN EL LCD DE LOS DATOS
+      connectivity(); // GESTIÓN DE CONEXIONES. WIFI, LORA, ESCRITURA SD
+
       ccs.disableInterrupt ();
 
       display.clearDisplay();
@@ -348,11 +357,12 @@ void setup()
       connectivity();
       epochTimePrevious = epochTime;
       INA.configure(INA226_AVERAGES_1024, INA226_BUS_CONV_TIME_8244US,  INA226_SHUNT_CONV_TIME_8244US, INA226_MODE_POWER_DOWN);
-       pluv_count=0;
+      pluv_count = 0;
       ccs.disableInterrupt ();
-      qmc.setMode(Mode_Standby ,ODR_200Hz,RNG_2G,OSR_256);
+      qmc.setMode(Mode_Standby , ODR_200Hz, RNG_2G, OSR_256);
       display.clearDisplay();
       display.display();
+      LoRa.sleep();
       esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
       Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) +
                      " Seconds");
@@ -374,7 +384,7 @@ void loop()
 
 void sensorsInitialize() {
 
-  // ANALOGS 
+  // ANALOGS
   analogReadResolution(12);
   //analogSetSamples(samples);
   // INITIALIZE OLED
@@ -409,14 +419,14 @@ void sensorsInitialize() {
   ss.begin(GPSBaud);
 
   // INITIALIZE BMP180
-  if (!bmp.begin(BMP085_ULTRALOWPOWER))
+  if (myBMP.begin() != true)
   {
-    Serial.println("Could not find BMP180 or BMP085 sensor at 0x77");
-    //display.println(F("Couldn't find BMP180"));
-    // display.display();
-    delay(1000);
-    // while (1) {}
+    Serial.println(F("Bosch BMP180/BMP085 is not connected or fail to read calibration coefficients"));
+    delay(5000);
   }
+
+  Serial.println(F("Bosch BMP180/BMP085 sensor is OK")); //(F()) saves string to flash & keeps dynamic memory free
+
 
 
   // INA226
@@ -443,9 +453,9 @@ void sensorsInitialize() {
     Serial.println("Failed to start sensor! Please check your wiring.");
     // while (1);
   }
- // ccs.enableInterrupt (); // FOR DATA READY
+  // ccs.enableInterrupt (); // FOR DATA READY
   //ccs.disableInterrupt ();
- // ccs.setThresholds(2000,   2500,  50 );
+  // ccs.setThresholds(2000,   2500,  50 );
   ccs.setDriveMode(CCS811_DRIVE_MODE_1SEC);
 
   // VEML6070
@@ -471,11 +481,9 @@ void sensorsInitialize() {
   }
 
 
-  //HMC8553
+  //QMC8553
   qmc.init();
-  qmc.setMode(Mode_Continuous,ODR_200Hz,RNG_2G,OSR_256); 
-  /* Display some basic information on this sensor */
-  displaySensorDetails();
+  qmc.setMode(Mode_Continuous, ODR_200Hz, RNG_2G, OSR_256);
 }
 
 
@@ -580,6 +588,7 @@ void readLight () {
   lightMeter.configure(BH1750::ONE_TIME_LOW_RES_MODE);
 
   UVLEVEL = uv.readUV() + UVLEVEL;
+  Irradiance = UVLEVEL * 0, 025 + Irradiance; //W/m2
   Serial.println("UV LEVEL: ");
   Serial.print(UVLEVEL);
 
@@ -613,19 +622,20 @@ void readHumidityAndTemperature() {
 }
 
 void readPressure() {
-  PRESSUREBMP180 = bmp.readPressure() + PRESSUREBMP180;
-  TEMPERATUREBMP180 = bmp.readTemperature() + TEMPERATUREBMP180;
-  ALTITUDE = bmp.readAltitude() + ALTITUDE+58;
+  PRESSUREBMP180 = myBMP.getPressure() + PRESSUREBMP180;
+  TEMPERATUREBMP180 = myBMP.getTemperature() + TEMPERATUREBMP180;
+  ALTITUDE = 79+ALTITUDE;
+  forecast = forecastString[getForecastClimate()];
 
 }
 
 void readQMC5883()
 {
   /* Get a new sensor event */
- int x, y, z;
+  int x, y, z;
   int azimuth;
   //float azimuth; //is supporting float too
-  qmc.read(&x, &y, &z,&azimuth);
+  qmc.read(&x, &y, &z, &azimuth);
   //azimuth = qmc.azimuth(&y,&x);//you can get custom azimuth
   Serial.print("x: ");
   Serial.print(x);
@@ -655,7 +665,7 @@ void readQMC5883()
 
 void readBatteryLevel() {
   // read the analog in value
-  voltage = analogRead(BATTERYPIN)*3.3/4095*2+voltage;
+  voltage = analogRead(BATTERYPIN) * 3.3 / 4095 * 2 + voltage;
   Serial.println("Analog");
   Serial.println(analogRead(BATTERYPIN));
   Serial.println("voltage");
@@ -665,7 +675,9 @@ void readBatteryLevel() {
 
 
 void readGPS() {
-  while (ss.available() > 0) {
+  unsigned long tiempo = 0;
+  tiempo = millis();
+  while ((ss.available() > 0) && (millis() - tiempo < 60000)) {
     gps.encode(ss.read());
     if (gps.location.isUpdated()) {
       Serial.print("Latitude="); Serial.print(gps.location.lat(), 6);
@@ -674,7 +686,6 @@ void readGPS() {
       LONGITUDE = gps.location.lng();
       Timestamp = gps.date.value() + "" + gps.time.value();
       // PRINT TIME
-
       display.clearDisplay();
       int hora = gps.time.hour();
       int minutos = gps.time.minute();
@@ -753,46 +764,29 @@ void readGPS() {
 void readLevelWater () {
   /*VL53L0X_RangingMeasurementData_t measure;
 
-  lox.rangingTest(&measure, false); // pass in 'true' to get debug data printout! */
+    lox.rangingTest(&measure, false); // pass in 'true' to get debug data printout! */
 
-  
-  int range = map(analogRead(26), sensorMin, sensorMax, 0, 3);
+
+  int range = analogRead(26);
   // range value:
-  switch (range) {
-    case 0:    // Sensor getting wet
-      statusRain = "Flood";
-      break;
-    case 1:    // Sensor getting wet
-      statusRain = "Rain Start";
-      break;
-    case 2:    // Sensor dry
-      statusRain = "No Rain";
-      break;
+  if (range < 1365) {
+    statusRain = "Flood";
+  }
+  else if (range < 2730) {
+    statusRain = "Rain Start";
+  }
+  else {
+    statusRain = "No Rain";
   }
 
   // CALCULATE M2 RAIN
- waterLevel=pluv_count*10*2.76/201.061; // de ML y area de captador 201,061 a L/m2
-
-  /*if (measure.RangeStatus != 4) {  // phase failures have incorrect data
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.print(measure.RangeMilliMeter);
-    waterLevel = measure.RangeMilliMeter + waterLevel;
-    display.print("mm");
-    display.display();
-    Serial.println();
-    delay(2000);
-  } else {
-    display.display();
-    display.clearDisplay();
-    return;
-  } */
+  waterLevel = pluv_count * 10 * 2.76 / 201.061; // de ML y area de captador 201,061 a L/m2
 }
 
 
 void measureAll() {
   readLevelWater ();
-  //readGPS();
+ // readGPS();
   for (contador = 1; contador <= TimeMeasure; contador++) {
     display.clearDisplay();
     display.setTextSize(2); // set font size to 2 you can set it up to 3
@@ -814,7 +808,7 @@ void measureAll() {
 }
 
 void MeanCalculation() {
-  contador=TimeMeasure;
+  contador = TimeMeasure;
   PRESSUREBMP180M = PRESSUREBMP180 / contador;
   TEMPERATUREBMP180M = TEMPERATUREBMP180 / contador;
   ALTITUDEM = ALTITUDE / contador;
@@ -828,30 +822,31 @@ void MeanCalculation() {
   windM = wind / contador;
   waterLevelM = waterLevel;
   voltageM = voltage / contador;
-  batteryLevelM = voltageM*100-320;
+  batteryLevelM = voltageM * 100 - 320;
   WATTM = WATT / contador;
   SOLARVOLTAGEM = SOLARVOLTAGE / contador;
   SHUNTM = SHUNT / contador;
   CURRENTM = CURRENT / contador;
- 
+
 }
 
+uint8_t getForecastClimate(){
+  int32_t pressure = 0;
+  pressure = myBMP.getSeaLevelPressure(79);
 
-void displaySensorDetails(void)
-{
-  sensor_t sensor;
-  mag.getSensor(&sensor);
-  Serial.println("------------------------------------");
-  Serial.print  ("Sensor:       "); Serial.println(sensor.name);
-  Serial.print  ("Driver Ver:   "); Serial.println(sensor.version);
-  Serial.print  ("Unique ID:    "); Serial.println(sensor.sensor_id);
-  Serial.print  ("Max Value:    "); Serial.print(sensor.max_value); Serial.println(" uT");
-  Serial.print  ("Min Value:    "); Serial.print(sensor.min_value); Serial.println(" uT");
-  Serial.print  ("Resolution:   "); Serial.print(sensor.resolution); Serial.println(" uT");
-  Serial.println("------------------------------------");
-  Serial.println("");
-  delay(500);
+  if (pressure == BMP180_ERROR) return BMP180_ERROR;            //error handler, collision on i2c bus
+
+  pressure = pressure - 101325;              //negative value poor weather, positive value good weather
+
+  if (pressure <  -250)                    return 0;            //thunderstorm
+  if (pressure >= -250 && pressure < -50)  return 1;            //rain
+  if (pressure >= -50  && pressure <  0)   return 2;            //cloudy
+  if (pressure >=  0   && pressure <  50)  return 3;            //partly cloudy
+  if (pressure >=  50  && pressure <  250) return 4;            //clear
+  if (pressure >=  250)                    return 5;            //sunny 
+                                           return BMP180_ERROR;  
 }
+
 
 ///////////////////////////////////////////////////////// COMUNICATIONNN ////////////////////////////////////////////
 // Function that gets current epoch time
@@ -860,7 +855,7 @@ unsigned long getTime() {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
     //Serial.println("Failed to obtain time");
-    return(0);
+    return (0);
   }
   time(&now);
   return now;
@@ -868,8 +863,6 @@ unsigned long getTime() {
 
 void connectivity()
 {
-  initSD();
-  appendFile(SD, "/wheatherstation.txt");
 
   if (wifiConnect()) {
     /* Assign the api key (required) */
@@ -909,7 +902,7 @@ void connectivity()
     Serial.println(uid);
     Firestore();
     RTDB();
-   
+
     WiFi.disconnect();
     delay(500);
 
@@ -918,74 +911,99 @@ void connectivity()
     Serial.println("No WIFI. Lora messaging");
     initLora();
   }
-
+  initSD();
+  // creation of the message
+  messageSD = "\r\n" +
+              String(PRESSUREBMP180M) + "," +
+              String(TEMPERATUREBMP180M) + "," +
+              String(TEMPERATUREDHT22M) + "," +
+              String(HUMIDITYDHT22M) + "," +
+              String(CO2M) + "," +
+              String(TVOCM) + "," +
+              String(LIGHTM) + "," +
+              String(UVLEVELM) + "," +
+              String(direccionM) + "," +
+              String(windM) + "," +
+              String(waterLevelM) + "," +
+              String(batteryLevelM) + "," +
+              String(voltageM) + "," +
+              String(WATTM) + "," +
+              String(SOLARVOLTAGEM) + "," +
+              String(SHUNTM ) + "," +
+              String(CURRENTM) + "," +
+              String(ALTITUDEM) + "," +
+              statusRain + "," +
+              forecast + "," +
+              epochTime + "," +
+              epochTimeFormat;
+  appendFile(SD, "/wheatherstation.txt", messageSD.c_str());
 }
 
 
 
 void RTDB() {
 
-    for (int i = 0; i < 3; i++) {
-      for (int j = 0; j < 3; j++) {
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
 
-        String path = "/" + USERS[i] + "/" + WHEATHER[j];
+      String path = "/" + USERS[i] + "/" + WHEATHER[j];
 
-        String jsonStr = "";
+      String jsonStr = "";
 
-        FirebaseJson json1;
+      FirebaseJson json1;
 
-        FirebaseJsonData jsonObj;
+      FirebaseJsonData jsonObj;
 
-        json1.set("CurrentValues/Pressure", String(PRESSUREBMP180M));
-        json1.set("CurrentValues/TemperatureBMP180", String(TEMPERATUREBMP180M));
-        json1.set("CurrentValues/TemperatureAir", String(TEMPERATUREDHT22M));
-        json1.set("CurrentValues/HumidityAir", String(HUMIDITYDHT22M));
-        json1.set("CurrentValues/eCO2", String(CO2M));
-        json1.set("CurrentValues/TVOC", String( TVOCM));
-        json1.set("CurrentValues/lux", String( LIGHTM));
-        json1.set("CurrentValues/wind", String( windM));
-        json1.set("CurrentValues/direction", String( direccionM));
-        json1.set("CurrentValues/waterLevel", String(waterLevelM));
-        json1.set("CurrentValues/battery", String(batteryLevelM));
-        json1.set("CurrentValues/voltage", String(voltageM));
-        json1.set("CurrentValues/currentSolar", String(CURRENTM));
-        json1.set("CurrentValues/solarVoltage", String(SOLARVOLTAGEM));
-        json1.set("CurrentValues/watts", String(WATTM));
-        json1.set("CurrentValues/lat", String(LATITUDE));
-        json1.set("CurrentValues/Altitude", String(ALTITUDEM));
-        json1.set("CurrentValues/long", String(LONGITUDE));
-        json1.set("CurrentValues/UV", String(UVLEVELM));
-        json1.set("CurrentValues/forecast", String(forecast));
-        json1.set("CurrentValues/statusRain", String(statusRain));
-        json1.set("CurrentValues/TimeMeassure", (String(epochTimeFormat)));
-        json1.set("statusActuators/RELAY1", String(RELAY1));
-        json1.set("statusActuators/RELAY2", String(RELAY2));
-        json1.set("statusActuators/RELAY3", String(RELAY3));
-        json1.set("statusActuators/RELAY4", String(RELAY4));
+      json1.set("CurrentValues/Pressure", String(PRESSUREBMP180M));
+      json1.set("CurrentValues/TemperatureBMP180", String(TEMPERATUREBMP180M));
+      json1.set("CurrentValues/TemperatureAir", String(TEMPERATUREDHT22M));
+      json1.set("CurrentValues/HumidityAir", String(HUMIDITYDHT22M));
+      json1.set("CurrentValues/eCO2", String(CO2M));
+      json1.set("CurrentValues/TVOC", String( TVOCM));
+      json1.set("CurrentValues/lux", String( LIGHTM));
+      json1.set("CurrentValues/wind", String( windM));
+      json1.set("CurrentValues/direction", String( direccionM));
+      json1.set("CurrentValues/waterLevel", String(waterLevelM));
+      json1.set("CurrentValues/battery", String(batteryLevelM));
+      json1.set("CurrentValues/voltage", String(voltageM));
+      json1.set("CurrentValues/currentSolar", String(CURRENTM));
+      json1.set("CurrentValues/solarVoltage", String(SOLARVOLTAGEM));
+      json1.set("CurrentValues/watts", String(WATTM));
+      json1.set("CurrentValues/lat", String(LATITUDE));
+      json1.set("CurrentValues/Altitude", String(ALTITUDEM));
+      json1.set("CurrentValues/long", String(LONGITUDE));
+      json1.set("CurrentValues/UV", String(UVLEVELM));
+      json1.set("CurrentValues/forecast", String(forecast));
+      json1.set("CurrentValues/statusRain", String(statusRain));
+      json1.set("CurrentValues/TimeMeassure", (String(epochTimeFormat)));
+      json1.set("statusActuators/RELAY1", String(RELAY1));
+      json1.set("statusActuators/RELAY2", String(RELAY2));
+      json1.set("statusActuators/RELAY3", String(RELAY3));
+      json1.set("statusActuators/RELAY4", String(RELAY4));
 
 
-        Serial.println("------------------------------------");
-        Serial.println("JSON Data");
-        json1.toString(jsonStr, true);
-        Serial.println(jsonStr);
-        Serial.println("------------------------------------");
+      Serial.println("------------------------------------");
+      Serial.println("JSON Data");
+      json1.toString(jsonStr, true);
+      Serial.println(jsonStr);
+      Serial.println("------------------------------------");
 
-        Serial.println("------------------------------------");
-        Serial.println("Set JSON test...");
+      Serial.println("------------------------------------");
+      Serial.println("Set JSON test...");
 
-        if (Firebase.RTDB.set(&fbdo, path.c_str(), &json1))
-        {
-          Serial.println("PASSED");
-          Serial.println("PATH: " + fbdo.dataPath());
-          Serial.println("TYPE: " + fbdo.dataType());
-        }
-        else {
-          Serial.println("FAILED");
-          Serial.println("REASON: " + fbdo.errorReason());
-        }
+      if (Firebase.RTDB.set(&fbdo, path.c_str(), &json1))
+      {
+        Serial.println("PASSED");
+        Serial.println("PATH: " + fbdo.dataPath());
+        Serial.println("TYPE: " + fbdo.dataType());
       }
-    } // FORS
-  
+      else {
+        Serial.println("FAILED");
+        Serial.println("REASON: " + fbdo.errorReason());
+      }
+    }
+  } // FORS
+
 }
 
 
@@ -1050,10 +1068,9 @@ void Firestore() {
 
 // Initialize LORA
 void initLora() {
-  SPI.end();
-  digitalWrite(SD_CHIP_SELECT_PIN, HIGH);
-  digitalWrite(CS_LORA, HIGH);
-  //LoRa.setSPIFrequency(8E6);
+  SPI.end(); //End SPI
+  digitalWrite(SD_CHIP_SELECT_PIN, HIGH); //SD OFF
+  digitalWrite(CS_LORA, HIGH); //LORA ON
   //setup LoRa transceiver module
   LoRa.setPins(CS_LORA, RESET, DIO0);
   while (!LoRa.begin(866E6)) {
@@ -1064,14 +1081,16 @@ void initLora() {
   // The sync word assures you don't get LoRa messages from other LoRa transceivers
   // ranges from 0-0xFF
   LoRa.setSyncWord(destination);
-  LoRa.setSpreadingFactor(spreadingFactor);
-  LoRa.setCodingRate4(codingRateDenominator);
-  LoRa.setSignalBandwidth(signalBandwidth);
+  LoRa.setSpreadingFactor(spreadingFactor); //10
+  LoRa.setCodingRate4(codingRateDenominator); //5
+  LoRa.setSignalBandwidth(signalBandwidth); //500E3
   Serial.println("LoRa Initializing OK!");
   delay(1000);
+  // send message:
   sendLoraMessage();
   // parse for a packet, and call onReceive with the result:
-  onReceive(LoRa.parsePacket());
+  LoRa.onReceive(onReceive);
+  LoRa.receive();
 }
 
 void sendLoraMessage() {
@@ -1119,7 +1138,6 @@ void sendLoraMessage() {
   display.display();
   delay(TimeDisplay);
   delay(1000);
-  LoRa.sleep();
 }
 
 void onReceive(int packetSize) {
@@ -1139,12 +1157,14 @@ void onReceive(int packetSize) {
 
   if (incomingLength != incoming.length()) {   // check length for error
     Serial.println("error: message length does not match length");
+    appendFile(SD, "/wheatherstation.txt", "Error in Lora length doesn,t match");
     return;                             // skip rest of function
   }
 
   // if the recipient isn't this device or broadcast,
   if (recipient != localAddress && recipient != 0xF3) {
     Serial.println("This message is not for me.");
+    appendFile(SD, "/wheatherstation.txt", "Error in Lora message not proper recipient");
     return;                             // skip rest of function
   }
 
@@ -1157,6 +1177,23 @@ void onReceive(int packetSize) {
   Serial.println("RSSI: " + String(LoRa.packetRssi()));
   Serial.println("Snr: " + String(LoRa.packetSnr()));
   Serial.println();
+
+  String messageLORA = "OK";
+
+  while (LoRa.beginPacket() == 0) {
+    Serial.print("waiting for radio ... ");
+    delay(100);
+  }
+  Serial.print("Sending packet non-blocking: ");
+  // send in async / non-blocking mode
+  LoRa.beginPacket();
+  LoRa.write(destination);              // add destination address
+  LoRa.write(localAddress);             // add sender address
+  LoRa.write(msgCount);                 // add message ID
+  LoRa.write(messageLORA.length());        // add payload length
+  LoRa.print(messageLORA);
+  msgCount++;     // add payload  LoRa.print(messageLORA);
+  LoRa.endPacket(true); // true = async / non-blocking mode
 }
 
 bool wifiConnect() {
@@ -1259,40 +1296,15 @@ void writeFile(fs::FS &fs, const char * path, const char * message) {
   file.close();
 }
 
-void appendFile(fs::FS &fs, const char * path) {
+void appendFile(fs::FS &fs, const char * path, const char * message) {
   Serial.printf("Appending to file: %s\n", path);
 
-  File file = fs.open(path, FILE_WRITE);
+  File file = fs.open(path, FILE_APPEND);
   if (!file) {
     Serial.println("Failed to open file for appending");
     return;
   }
-  // creation of the message
-  String messageSD = "\r\n" +
-                     String(PRESSUREBMP180M) + "," +
-                     String(TEMPERATUREBMP180M) + "," +
-                     String(TEMPERATUREDHT22M) + "," +
-                     String(HUMIDITYDHT22M) + "," +
-                     String(CO2M) + "," +
-                     String(TVOCM) + "," +
-                     String(LIGHTM) + "," +
-                     String(UVLEVELM) + "," +
-                     String(direccionM) + "," +
-                     String(windM) + "," +
-                     String(waterLevelM) + "," +
-                     String(batteryLevelM) + "," +
-                     String(voltageM) + "," +
-                     String(WATTM) + "," +
-                     String(SOLARVOLTAGEM) + "," +
-                     String(SHUNTM ) + "," +
-                     String(CURRENTM) + "," +
-                     String(ALTITUDEM) + "," +
-                     statusRain + "," +
-                     forecast + "," +
-                     String(epochTime) + "," +
-                     String(epochTimeFormat);
-
-  if (file.print(messageSD)) {
+  if (file.print(message)) {
     Serial.println("Message appended");
     display.clearDisplay();
     display.setCursor(0, 10);
@@ -1604,7 +1616,7 @@ void displayAll() {
   display.display();
   delay(TimeDisplay);
 
-  ///////////////////////////////////////////////////////////////////// HMC5883L
+  ///////////////////////////////////////////////////////////////////// QMC5883L
   display.clearDisplay();
   display.setCursor(0, 10);
   display.setTextSize(1);
@@ -1615,7 +1627,7 @@ void displayAll() {
   display.display();
   delay(TimeDisplay);
 
-    ///////////////////////////////////////////////////////////////////// BATTERY LEVEL
+  ///////////////////////////////////////////////////////////////////// BATTERY LEVEL
 
   display.clearDisplay();
   display.setCursor(0, 10);
@@ -1632,5 +1644,5 @@ void displayAll() {
   display.display();
   delay(TimeDisplay);
 
-  
+
 }
