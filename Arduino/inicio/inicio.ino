@@ -131,8 +131,8 @@ const unsigned char LORA [] PROGMEM = {
 };
 
 
-#define WIFI_SSID "EUSKALTEL_ham5Sx9"
-#define WIFI_PASSWORD "ELfJJQt9Rwat3mDfuM"
+#define WIFI_SSID "MiFibra-F094" // EUSKALTEL_ham5Sx9
+#define WIFI_PASSWORD "MJ6tZgPD" //ELfJJQt9Rwat3mDfuM
 #define FIREBASE_HOST "https://wheather-station-18cb0-default-rtdb.europe-west1.firebasedatabase.app"
 #define FIREBASE_AUTH "C9VYnLQUa3PYcvaa6uL8kPVpfXF45q3tkBS4ybqp"
 #define API_KEY "AIzaSyAb45HOgsruLp1SaxqTvrKu04qviqPFi_Y"
@@ -184,7 +184,7 @@ const int daylightOffset_sec = 7200; //3600
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define DHTPIN 4     // Digital pin connected to the DHT sensor
-#define DHTTYPE    DHT22     // DHT22 (AM2302)
+#define DHTTYPE DHT22     // DHT22 (AM2302)
 #define CS_LORA 5
 #define pluv_PIN GPIO_NUM_32
 #define RESET 14
@@ -195,7 +195,7 @@ const int daylightOffset_sec = 7200; //3600
 #define codingRateDenominator 5
 #define signalBandwidth 500E3
 #define SCREEN_ADDRESS 0x3c //128x64
-#define TimeMeasure 10 // NUMBER OF MEASURINGS. ONE PER SECOND
+#define TimeMeasure 24 // NUMBER OF MEASURINGS
 #define TimeDisplay 3000 // number of miliseconds refresing display
 #define BATTERYPIN 12
 
@@ -224,8 +224,7 @@ BH1750 lightMeter;
 BMP180 myBMP(BMP180_ULTRALOWPOWER);
 
 // INA226
-INA226 INA;
-
+INA226 INA(0x40);
 
 //VL53L0X
 Adafruit_VL53L0X lox = Adafruit_VL53L0X();
@@ -243,7 +242,7 @@ SoftwareSerial ss(RXPin, TXPin);                        // The serial connection
 
 // QMC5883
 
-MechaQMC5883 qmc;
+MechaQMC5883 qmc; //0x0D
 
 String daysOfTheWeek[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 String monthsNames[12] = { "January", "february", "March", "April", "May",  "June", "July", "August", "September", "October", "November", "December" };
@@ -267,6 +266,16 @@ byte destination = 0xF3;      // destination to send to
 RTC_DATA_ATTR int pluv_count = 0;
 RTC_DATA_ATTR unsigned long epochTimePrevious = 0;
 volatile long last_interrupt_time = 0;
+
+struct numberAnemometer {
+  const uint8_t PIN;
+  uint32_t numberKeyPresses;
+};
+numberAnemometer Anempulses = {33, 0};
+void IRAM_ATTR anemometer() {
+  Serial.printf("Anemometer has been pressed %u times\n", Anempulses.numberKeyPresses);
+  Anempulses.numberKeyPresses += 1;
+}
 
 struct Message {
   byte TemperatureAirLORA[5];
@@ -298,7 +307,7 @@ struct Message {
 unsigned long dataMillis = 0;
 int count = 0;
 
-void printLocalTime(), Firestore(), onReceive(int packetSize), RTDB(), checkConfig(),  sendLoraMessage(), sensorsInitialize(), measureAll(), MeanCalculation(), displayAll(), connectivity(), initLora(), initSD(), appendFile(fs::FS &fs, const char * path, const char * message), writeFile(fs::FS &fs, const char * path, const char * message), RTDB(), drawProgressbar(int x, int y, int width, int height, int progress);
+void printLocalTime(), Firestore(), onReceive(int packetSize), RTDB(),  sendLoraMessage(), sensorsInitialize(), measureAll(), MeanCalculation(), displayAll(), connectivity(), initLora(), initSD(), appendFile(fs::FS &fs, const char * path, const char * message), writeFile(fs::FS &fs, const char * path, const char * message), RTDB(), drawProgressbar(int x, int y, int width, int height, int progress);
 bool wifiConnect();
 uint8_t getForecastClimate();
 void setup()
@@ -333,9 +342,7 @@ void setup()
       MeanCalculation(); // CALCULO DE MEDIA PONDERADA
       displayAll(); // DISPLAY EN EL LCD DE LOS DATOS
       connectivity(); // GESTIÓN DE CONEXIONES. WIFI, LORA, ESCRITURA SD
-
       ccs.disableInterrupt ();
-
       display.clearDisplay();
       display.display();
       epochTimePrevious = epochTime;
@@ -354,12 +361,12 @@ void setup()
       measureAll();
       MeanCalculation();
       displayAll();
-      connectivity();
-      epochTimePrevious = epochTime;
-      INA.configure(INA226_AVERAGES_1024, INA226_BUS_CONV_TIME_8244US,  INA226_SHUNT_CONV_TIME_8244US, INA226_MODE_POWER_DOWN);
+      INA.shutDown();
       pluv_count = 0;
       ccs.disableInterrupt ();
       qmc.setMode(Mode_Standby , ODR_200Hz, RNG_2G, OSR_256);
+      connectivity();
+      epochTimePrevious = epochTime;
       display.clearDisplay();
       display.display();
       LoRa.sleep();
@@ -387,6 +394,9 @@ void sensorsInitialize() {
   // ANALOGS
   analogReadResolution(12);
   //analogSetSamples(samples);
+  // ANEMOMETER
+  pinMode(Anempulses.PIN, INPUT);
+  attachInterrupt(Anempulses.PIN, anemometer, RISING);
   // INITIALIZE OLED
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println("SSD1306 allocation failed");
@@ -434,16 +444,38 @@ void sensorsInitialize() {
   {
     Serial.println("could not connect. Fix and Reboot");
   }
-  // Configure INA226
-  INA.configure(INA226_AVERAGES_1024, INA226_BUS_CONV_TIME_8244US,  INA226_SHUNT_CONV_TIME_8244US, INA226_MODE_SHUNT_BUS_CONT);
 
-  // Calibrate INA226. Rshunt = 0.01 ohm, Max excepted current = 4A
-  INA.calibrate(0.01, 4);
-  // Enable Power Over-Limit Alert
-  INA.enableOverPowerLimitAlert();
-  INA.setPowerLimit(1000);
+  Serial.println();
+  Serial.print("MAN:\t");
+  Serial.println(INA.getManufacturerID(), HEX);
+  Serial.print("DIE:\t");
+  Serial.println(INA.getDieID(), HEX);
+  Serial.println();
+  delay(100);
+
+  INA.setModeShuntBusContinuous();
+  // to be tested....
+  // measure POWER LIMIT ?
+  // assume milisamperes.
+  uint16_t limit = 1000;
+  INA.setAlertLimit(limit);
+
+  // read back to verify.
+  uint16_t test_limit = INA.getAlertLimit();
+  if (test_limit != limit)
+  {
+    Serial.print("Unexpected limit:\t");
+    Serial.println(test_limit);
+    while (1);
+  }
+
+  uint16_t alert_mask = INA226_POWER_OVER_LIMIT;
+  INA.setAlertRegister(alert_mask);
+  INA.setMaxCurrentShunt(1, 0.002);
+  INA.setAverage(7);
+  INA.setShuntVoltageConversionTime(7);
+  INA.setBusVoltageConversionTime(7);
   // Display configuration
-  // checkConfig();
 
 
   // CO2 SENSOR
@@ -483,19 +515,17 @@ void sensorsInitialize() {
 
   //QMC8553
   qmc.init();
-  qmc.setMode(Mode_Continuous, ODR_200Hz, RNG_2G, OSR_256);
 }
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void readINA() {
-
   float currentINA = 0, wattsINA = 0, voltageINA = 0, shuntINA = 0;
-  currentINA = INA.readShuntCurrent();
-  wattsINA = INA.readBusPower();
-  voltageINA = INA.readBusVoltage();
-  shuntINA = INA.readShuntVoltage();
+  currentINA = INA.getCurrent_mA();
+  wattsINA = INA.getPower_mW();
+  voltageINA = INA.getBusVoltage();
+  shuntINA = INA.getShuntVoltage_mV();
   if (currentINA < 0) {
     currentINA = 0;
   }
@@ -624,13 +654,14 @@ void readHumidityAndTemperature() {
 void readPressure() {
   PRESSUREBMP180 = myBMP.getPressure() + PRESSUREBMP180;
   TEMPERATUREBMP180 = myBMP.getTemperature() + TEMPERATUREBMP180;
-  ALTITUDE = 79+ALTITUDE;
+  ALTITUDE = 650 + ALTITUDE;
   forecast = forecastString[getForecastClimate()];
 
 }
 
 void readQMC5883()
 {
+  qmc.setMode(Mode_Continuous, ODR_200Hz, RNG_2G, OSR_256);
   /* Get a new sensor event */
   int x, y, z;
   int azimuth;
@@ -658,7 +689,7 @@ void readQMC5883()
     heading -= 2 * PI;
 
   // Convert radians to degrees for readability.
-  direccion = heading * 180 / M_PI + direccion;
+  direccion = heading * 180 / M_PI + 1.5 + direccion;
   Serial.print("Angulo de la veleta: ");
   Serial.print(heading * 180 / M_PI);
 }
@@ -776,7 +807,7 @@ void readLevelWater () {
     statusRain = "Rain Start";
   }
   else {
-    statusRain = "No Rain";
+    statusRain = "No Rain" ; // A mas alto no hay lluvia
   }
 
   // CALCULATE M2 RAIN
@@ -786,7 +817,7 @@ void readLevelWater () {
 
 void measureAll() {
   readLevelWater ();
- // readGPS();
+  // readGPS();
   for (contador = 1; contador <= TimeMeasure; contador++) {
     display.clearDisplay();
     display.setTextSize(2); // set font size to 2 you can set it up to 3
@@ -801,10 +832,13 @@ void measureAll() {
     readLight ();
     readHumidityAndTemperature();
     readCO2();
-    //readINA();
+    readQMC5883();
+    readINA();
     readBatteryLevel();
-    delay(1000);
+
   }
+  // Anemometer
+  windM = Anempulses.PIN * 3.6 * 0.025 * 2 * PI / 60; // velocidad en km/hora en funcion del numero de interrupciones
 }
 
 void MeanCalculation() {
@@ -819,7 +853,6 @@ void MeanCalculation() {
   LIGHTM = LIGHT / contador;
   UVLEVELM = UVLEVEL / contador;
   direccionM =  direccion / contador;
-  windM = wind / contador;
   waterLevelM = waterLevel;
   voltageM = voltage / contador;
   batteryLevelM = voltageM * 100 - 320;
@@ -830,7 +863,7 @@ void MeanCalculation() {
 
 }
 
-uint8_t getForecastClimate(){
+uint8_t getForecastClimate() {
   int32_t pressure = 0;
   pressure = myBMP.getSeaLevelPressure(79);
 
@@ -843,8 +876,8 @@ uint8_t getForecastClimate(){
   if (pressure >= -50  && pressure <  0)   return 2;            //cloudy
   if (pressure >=  0   && pressure <  50)  return 3;            //partly cloudy
   if (pressure >=  50  && pressure <  250) return 4;            //clear
-  if (pressure >=  250)                    return 5;            //sunny 
-                                           return BMP180_ERROR;  
+  if (pressure >=  250)                    return 5;            //sunny
+  return BMP180_ERROR;
 }
 
 
@@ -1205,6 +1238,15 @@ bool wifiConnect() {
   { // Wait for the Wi-Fi to connect
     delay(1000);
     Serial.print(++teller); Serial.print(' ');
+    display.clearDisplay();
+  display.setCursor(0, 10);
+  display.setTextSize(1);
+  display.println("Connecting to:");
+  display.setTextSize(2);
+  display.println(WIFI_SSID);
+  display.setTextSize(1);
+  display.println(teller);
+  display.display();
   }
 
   if (WiFi.status() == WL_CONNECTED) {
@@ -1325,81 +1367,6 @@ void appendFile(fs::FS &fs, const char * path, const char * message) {
   SD.end();
 }
 
-
-void checkConfig()
-{
-  Serial.print("Mode:                  ");
-  switch (INA.getMode())
-  {
-    case INA226_MODE_POWER_DOWN:      Serial.println("Power-Down"); break;
-    case INA226_MODE_SHUNT_TRIG:      Serial.println("Shunt Voltage, Triggered"); break;
-    case INA226_MODE_BUS_TRIG:        Serial.println("Bus Voltage, Triggered"); break;
-    case INA226_MODE_SHUNT_BUS_TRIG:  Serial.println("Shunt and Bus, Triggered"); break;
-    case INA226_MODE_ADC_OFF:         Serial.println("ADC Off"); break;
-    case INA226_MODE_SHUNT_CONT:      Serial.println("Shunt Voltage, Continuous"); break;
-    case INA226_MODE_BUS_CONT:        Serial.println("Bus Voltage, Continuous"); break;
-    case INA226_MODE_SHUNT_BUS_CONT:  Serial.println("Shunt and Bus, Continuous"); break;
-    default: Serial.println("unknown");
-  }
-
-  Serial.print("Samples average:       ");
-  switch (INA.getAverages())
-  {
-    case INA226_AVERAGES_1:           Serial.println("1 sample"); break;
-    case INA226_AVERAGES_4:           Serial.println("4 samples"); break;
-    case INA226_AVERAGES_16:          Serial.println("16 samples"); break;
-    case INA226_AVERAGES_64:          Serial.println("64 samples"); break;
-    case INA226_AVERAGES_128:         Serial.println("128 samples"); break;
-    case INA226_AVERAGES_256:         Serial.println("256 samples"); break;
-    case INA226_AVERAGES_512:         Serial.println("512 samples"); break;
-    case INA226_AVERAGES_1024:        Serial.println("1024 samples"); break;
-    default: Serial.println("unknown");
-  }
-
-  Serial.print("Bus conversion time:   ");
-  switch (INA.getBusConversionTime())
-  {
-    case INA226_BUS_CONV_TIME_140US:  Serial.println("140uS"); break;
-    case INA226_BUS_CONV_TIME_204US:  Serial.println("204uS"); break;
-    case INA226_BUS_CONV_TIME_332US:  Serial.println("332uS"); break;
-    case INA226_BUS_CONV_TIME_588US:  Serial.println("558uS"); break;
-    case INA226_BUS_CONV_TIME_1100US: Serial.println("1.100ms"); break;
-    case INA226_BUS_CONV_TIME_2116US: Serial.println("2.116ms"); break;
-    case INA226_BUS_CONV_TIME_4156US: Serial.println("4.156ms"); break;
-    case INA226_BUS_CONV_TIME_8244US: Serial.println("8.244ms"); break;
-    default: Serial.println("unknown");
-  }
-
-  Serial.print("Shunt conversion time: ");
-  switch (INA.getShuntConversionTime())
-  {
-    case INA226_SHUNT_CONV_TIME_140US:  Serial.println("140uS"); break;
-    case INA226_SHUNT_CONV_TIME_204US:  Serial.println("204uS"); break;
-    case INA226_SHUNT_CONV_TIME_332US:  Serial.println("332uS"); break;
-    case INA226_SHUNT_CONV_TIME_588US:  Serial.println("558uS"); break;
-    case INA226_SHUNT_CONV_TIME_1100US: Serial.println("1.100ms"); break;
-    case INA226_SHUNT_CONV_TIME_2116US: Serial.println("2.116ms"); break;
-    case INA226_SHUNT_CONV_TIME_4156US: Serial.println("4.156ms"); break;
-    case INA226_SHUNT_CONV_TIME_8244US: Serial.println("8.244ms"); break;
-    default: Serial.println("unknown");
-  }
-
-  Serial.print("Max possible current:  ");
-  Serial.print(INA.getMaxPossibleCurrent());
-  Serial.println(" A");
-
-  Serial.print("Max current:           ");
-  Serial.print(INA.getMaxCurrent());
-  Serial.println(" A");
-
-  Serial.print("Max shunt voltage:     ");
-  Serial.print(INA.getMaxShuntVoltage());
-  Serial.println(" V");
-
-  Serial.print("Max power:             ");
-  Serial.print(INA.getMaxPower());
-  Serial.println(" W");
-}
 
 void printLocalTime() {
   struct tm timeinfo;
@@ -1523,7 +1490,7 @@ void displayAll() {
   display.println("Pressure: ");
   display.setTextSize(2);
   display.print(PRESSUREBMP180M);
-  display.print(" Pa");
+  display.println(" Pa");
   display.setTextSize(1);
   display.setCursor(0, 35);
   display.println("Altitude: ");
@@ -1552,7 +1519,7 @@ void displayAll() {
   display.clearDisplay();
   display.setCursor(0, 10);
   display.setTextSize(1);
-  display.println("eCO2: ");
+  display.println("eCO2:");
   display.setTextSize(2);
   display.print(CO2M);
   display.println(" ppm");
@@ -1560,7 +1527,7 @@ void displayAll() {
   display.setCursor(0, 35);
   display.println("TVOC: ");
   display.setTextSize(2);
-  display.print(TVOCM );
+  display.print(TVOCM);
   display.println(" ppb");
   display.setTextSize(1);
   display.display();
@@ -1594,6 +1561,7 @@ void displayAll() {
   display.setTextSize(2);
   display.print(SHUNTM);
   display.println(" mV");
+  display.setTextSize(1);
   display.display();
   delay(TimeDisplay);
 
@@ -1623,7 +1591,13 @@ void displayAll() {
   display.println("DIRECTION: ");
   display.setTextSize(2);
   display.print(direccionM);
-  display.println(" DEG");
+  display.println(" º");
+  display.setCursor(0, 35);
+  display.setTextSize(1);
+  display.println("WIND Km/H:");
+  display.setTextSize(2);
+  display.print(windM);
+  display.setTextSize(1);
   display.display();
   delay(TimeDisplay);
 
@@ -1637,7 +1611,7 @@ void displayAll() {
   display.print(statusRain);
   display.setTextSize(1);
   display.setCursor(0, 35);
-  display.println("RAIN L/M2 LAST 3 HOUR:");
+  display.println("RAIN L/M2 LAST 3 H:");
   display.setTextSize(2);
   display.print(waterLevelM);
   display.setTextSize(1);
